@@ -2,7 +2,14 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
+const ADMIN_EMAIL = 'kesslervinci672@gmail.com'
+const ADMIN_PASSWORD = 'Lfk6rh123.' 
+
 export default function AdminPage() {
+  const [authorized, setAuthorized] = useState(false)
+  const [adminPass, setAdminPass] = useState('')
+  const [error, setError] = useState('')
+  const [user, setUser] = useState(null)
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalTransactions: 0,
@@ -17,26 +24,38 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('overview')
 
   useEffect(() => {
-    fetchAdminData()
+    checkAuth()
   }, [])
 
+  const checkAuth = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { window.location.href = '/'; return }
+    setUser(user)
+    setLoading(false)
+  }
+
+  const handleAdminLogin = () => {
+    if (adminPass === ADMIN_PASSWORD) {
+      setAuthorized(true)
+      fetchAdminData()
+    } else {
+      setError('Wrong password!')
+    }
+  }
+
   const fetchAdminData = async () => {
-    // Total users
     const { count: totalUsers } = await supabase
       .from('profiles')
       .select('*', { count: 'exact', head: true })
 
-    // Total gifts sent
     const { count: totalGiftsSent } = await supabase
       .from('sent_gifts')
       .select('*', { count: 'exact', head: true })
 
-    // Total messages
     const { count: totalMessages } = await supabase
       .from('messages')
       .select('*', { count: 'exact', head: true })
 
-    // Total transactions
     const { data: txData } = await supabase
       .from('coin_transactions')
       .select('amount, type')
@@ -45,7 +64,6 @@ export default function AdminPage() {
     const totalRevenue = txData?.reduce((sum, tx) => sum + tx.amount, 0) || 0
     const totalTransactions = txData?.length || 0
 
-    // New users today
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const { count: newUsersToday } = await supabase
@@ -62,7 +80,6 @@ export default function AdminPage() {
       newUsersToday: newUsersToday || 0,
     })
 
-    // Recent users
     const { data: users } = await supabase
       .from('profiles')
       .select('*')
@@ -70,29 +87,67 @@ export default function AdminPage() {
       .limit(20)
     setUsers(users || [])
 
-    // Recent transactions
     const { data: transactions } = await supabase
       .from('coin_transactions')
       .select('*, profiles(*)')
       .order('created_at', { ascending: false })
       .limit(20)
     setTransactions(transactions || [])
-
-    setLoading(false)
   }
 
   const banUser = async (userId, isBanned) => {
-    await supabase
+    const { error } = await supabase
       .from('profiles')
       .update({ is_banned: !isBanned })
       .eq('id', userId)
-    fetchAdminData()
+
+    if (error) {
+      alert('Error: ' + error.message)
+      return
+    }
+
+    setUsers(prev => prev.map(u =>
+      u.id === userId ? { ...u, is_banned: !isBanned } : u
+    ))
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-pink-400 text-xl font-bold">Loading Admin...</div>
+        <div className="text-pink-400 text-xl font-bold">Loading...</div>
+      </div>
+    )
+  }
+
+  // Admin Password Screen
+  if (!authorized) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800 rounded-3xl p-8 w-full max-w-sm text-center">
+          <div className="text-5xl mb-4">🔐</div>
+          <h1 className="text-white text-2xl font-bold mb-2">Admin Access</h1>
+          <p className="text-gray-400 text-sm mb-6">Enter admin password to continue</p>
+          <input
+            type="password"
+            value={adminPass}
+            onChange={(e) => setAdminPass(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()}
+            placeholder="Enter password"
+            className="w-full bg-gray-700 text-white rounded-xl px-4 py-3 focus:outline-none mb-3"
+          />
+          {error && (
+            <p className="text-red-400 text-sm mb-3">{error}</p>
+          )}
+          <button
+            onClick={handleAdminLogin}
+            className="w-full bg-pink-500 text-white py-3 rounded-xl font-bold"
+          >
+            Enter Admin Panel
+          </button>
+          <a href="/dashboard" className="block mt-4 text-gray-400 text-sm">
+            ← Back to Dashboard
+          </a>
+        </div>
       </div>
     )
   }
@@ -132,8 +187,6 @@ export default function AdminPage() {
       {/* Overview Tab */}
       {activeTab === 'overview' && (
         <div className="px-4 mt-4">
-
-          {/* Stats Grid */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-gray-800 rounded-2xl p-4">
               <div className="text-3xl">👥</div>
@@ -166,32 +219,13 @@ export default function AdminPage() {
               <div className="text-gray-400 text-sm">Coins Sold</div>
             </div>
           </div>
-
-          {/* Quick Actions */}
-          <div className="mt-4 bg-gray-800 rounded-2xl p-4">
-            <h2 className="font-bold text-gray-300 mb-3">Quick Actions</h2>
-            <div className="space-y-2">
-              <a href="/admin/reports" className="flex items-center gap-3 bg-gray-700 rounded-xl p-3">
-                <span className="text-2xl">🚩</span>
-                <span className="text-sm font-semibold">View Reports</span>
-              </a>
-              <a href="/admin/gifts" className="flex items-center gap-3 bg-gray-700 rounded-xl p-3">
-                <span className="text-2xl">🎁</span>
-                <span className="text-sm font-semibold">Manage Gifts</span>
-              </a>
-              <a href="/admin/packages" className="flex items-center gap-3 bg-gray-700 rounded-xl p-3">
-                <span className="text-2xl">🪙</span>
-                <span className="text-sm font-semibold">Manage Coin Packages</span>
-              </a>
-            </div>
-          </div>
         </div>
       )}
 
       {/* Users Tab */}
       {activeTab === 'users' && (
         <div className="px-4 mt-4 space-y-2">
-          <h2 className="font-bold text-gray-300 mb-2">Recent Users ({stats.totalUsers} total)</h2>
+          <h2 className="font-bold text-gray-300 mb-2">All Users ({stats.totalUsers} total)</h2>
           {users.map(u => (
             <div key={u.id} className="bg-gray-800 rounded-2xl p-3 flex items-center gap-3">
               <div className="w-10 h-10 bg-pink-900 rounded-full flex items-center justify-center text-xl">
@@ -205,13 +239,18 @@ export default function AdminPage() {
                   )}
                 </div>
                 <div className="text-gray-400 text-xs">
-                  {u.looking_for} • {u.location || 'No location'} • Joined {new Date(u.created_at).toLocaleDateString()}
+                  {u.looking_for || 'No preference'} • {u.location || 'No location'}
+                </div>
+                <div className="text-gray-500 text-xs">
+                  Joined {new Date(u.created_at).toLocaleDateString()}
                 </div>
               </div>
               <button
                 onClick={() => banUser(u.id, u.is_banned)}
                 className={`text-xs px-3 py-1.5 rounded-lg font-bold ${
-                  u.is_banned ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'
+                  u.is_banned
+                    ? 'bg-green-900 text-green-400'
+                    : 'bg-red-900 text-red-400'
                 }`}
               >
                 {u.is_banned ? 'Unban' : 'Ban'}
