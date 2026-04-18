@@ -8,6 +8,8 @@ export default function Dashboard() {
   const [wallet, setWallet] = useState(null)
   const [pendingRequests, setPendingRequests] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [dailyClaimed, setDailyClaimed] = useState(false)
+  const [message, setMessage] = useState('')
 
   useEffect(() => {
     getUser()
@@ -35,7 +37,7 @@ export default function Dashboard() {
       .single()
     setWallet(wallet)
 
-    // Get pending requests count
+    // Check pending requests
     const { count } = await supabase
       .from('connections')
       .select('*', { count: 'exact', head: true })
@@ -43,7 +45,57 @@ export default function Dashboard() {
       .eq('status', 'pending')
     setPendingRequests(count || 0)
 
+    // Check if daily bonus already claimed
+    const today = new Date().toISOString().split('T')[0]
+    if (profile?.last_daily_bonus === today) {
+      setDailyClaimed(true)
+    } else {
+      // Auto claim daily bonus
+      claimDailyBonus(user.id, profile, wallet)
+    }
+
     setLoading(false)
+  }
+
+  const claimDailyBonus = async (userId, profileData, walletData) => {
+    const today = new Date().toISOString().split('T')[0]
+    if (!profileData || !walletData) return
+    if (profileData.last_daily_bonus === today) {
+      setDailyClaimed(true)
+      return
+    }
+
+    await supabase
+      .from('profiles')
+      .update({ last_daily_bonus: today })
+      .eq('id', userId)
+
+    const newBalance = (walletData.balance || 0) + 5
+
+    await supabase
+      .from('coin_wallets')
+      .update({ balance: newBalance })
+      .eq('user_id', userId)
+
+    await supabase.from('coin_transactions').insert({
+      user_id: userId,
+      type: 'bonus',
+      amount: 5,
+      description: 'Daily login bonus',
+      balance_after: newBalance,
+    })
+
+    setWallet(prev => ({ ...prev, balance: newBalance }))
+    setDailyClaimed(true)
+    setMessage('🎉 You earned 5 coins for your daily login!')
+    setTimeout(() => setMessage(''), 4000)
+  }
+
+  const copyReferralCode = () => {
+    const referralLink = `https://my-dating-app-eight.vercel.app?ref=${profile?.referral_code}`
+    navigator.clipboard.writeText(referralLink)
+    setMessage('✅ Referral link copied! Share it to earn 50 coins per friend!')
+    setTimeout(() => setMessage(''), 4000)
   }
 
   const handleLogout = async () => {
@@ -82,51 +134,88 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Message Banner */}
+      {message && (
+        <div className="mx-4 mt-3 bg-green-100 text-green-600 text-sm text-center py-2 rounded-xl font-semibold">
+          {message}
+        </div>
+      )}
+
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-pink-500 to-red-400 text-white p-6 mx-4 mt-4 rounded-2xl">
-        <h1 className="text-2xl font-bold">
-          Welcome back! 👋
-        </h1>
-        <p className="opacity-80 mt-1">
-          {profile?.username || user?.email}
-        </p>
-        <div className="mt-3 bg-white bg-opacity-20 rounded-xl p-3">
-          <p className="text-sm">💬 Free messages remaining:</p>
-          <p className="text-3xl font-bold">{profile?.free_messages_remaining || 0}</p>
+        <h1 className="text-2xl font-bold">Welcome back! 👋</h1>
+        <p className="opacity-80 mt-1">{profile?.username || user?.email}</p>
+        <div className="grid grid-cols-2 gap-2 mt-3">
+          <div className="bg-white bg-opacity-20 rounded-xl p-3">
+            <p className="text-xs opacity-80">💬 Free Messages</p>
+            <p className="text-2xl font-bold">{profile?.free_messages_remaining || 0}</p>
+          </div>
+          <div className="bg-white bg-opacity-20 rounded-xl p-3">
+            <p className="text-xs opacity-80">🪙 Coins</p>
+            <p className="text-2xl font-bold">{wallet?.balance || 0}</p>
+          </div>
         </div>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 gap-4 px-4 mt-4">
-        <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
-          <div className="text-3xl">🪙</div>
-          <div className="font-bold text-2xl text-gray-800 mt-1">{wallet?.balance || 0}</div>
-          <div className="text-gray-400 text-sm">Coins</div>
-        </div>
-        <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
-          <div className="text-3xl">🎁</div>
-          <div className="font-bold text-2xl text-gray-800 mt-1">0</div>
-          <div className="text-gray-400 text-sm">Gifts Received</div>
+      {/* Daily Bonus Card */}
+      <div className={`mx-4 mt-4 rounded-2xl p-4 shadow-sm ${
+        dailyClaimed ? 'bg-gray-100' : 'bg-gradient-to-r from-yellow-400 to-orange-400'
+      }`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className={`font-bold ${dailyClaimed ? 'text-gray-500' : 'text-white'}`}>
+              📅 Daily Login Bonus
+            </h2>
+            <p className={`text-sm ${dailyClaimed ? 'text-gray-400' : 'text-white opacity-80'}`}>
+              {dailyClaimed ? 'Come back tomorrow for 5 more coins!' : 'Claim your 5 free coins!'}
+            </p>
+          </div>
+          <div className={`px-4 py-2 rounded-xl font-bold text-sm ${
+            dailyClaimed
+              ? 'bg-gray-200 text-gray-400'
+              : 'bg-white text-yellow-500'
+          }`}>
+            {dailyClaimed ? '✓ Claimed' : '+5 🪙'}
+          </div>
         </div>
       </div>
 
       {/* Referral Card */}
       <div className="bg-white mx-4 mt-4 rounded-2xl p-4 shadow-sm">
-        <h2 className="font-bold text-gray-800 mb-1">🔗 Your Referral Code</h2>
-        <p className="text-gray-400 text-sm mb-2">Share and earn 50 coins per friend!</p>
+        <h2 className="font-bold text-gray-800 mb-1">🔗 Refer & Earn</h2>
+        <p className="text-gray-400 text-sm mb-3">
+          Share your link — earn <span className="text-pink-500 font-bold">50 coins</span> for every friend who joins!
+        </p>
         <div className="bg-pink-50 rounded-xl p-3 flex items-center justify-between">
-          <span className="font-bold text-pink-500 text-lg">
-            {profile?.referral_code || 'LOADING'}
-          </span>
+          <div>
+            <p className="text-xs text-gray-400">Your referral code</p>
+            <p className="font-bold text-pink-500 text-lg">{profile?.referral_code || 'LOADING'}</p>
+          </div>
           <button
-            onClick={() => {
-              navigator.clipboard.writeText(profile?.referral_code || '')
-              alert('Referral code copied!')
-            }}
-            className="bg-pink-500 text-white px-3 py-1 rounded-lg text-sm"
+            onClick={copyReferralCode}
+            className="bg-pink-500 text-white px-3 py-2 rounded-lg text-sm font-bold"
           >
-            Copy
+            Share Link
           </button>
+        </div>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-3 gap-3 px-4 mt-4">
+        <div className="bg-white rounded-2xl p-3 shadow-sm text-center">
+          <div className="text-2xl">📞</div>
+          <div className="font-bold text-gray-800">{profile?.free_audio_calls_remaining || 0}</div>
+          <div className="text-gray-400 text-xs">Free Calls</div>
+        </div>
+        <div className="bg-white rounded-2xl p-3 shadow-sm text-center">
+          <div className="text-2xl">📹</div>
+          <div className="font-bold text-gray-800">{profile?.free_video_calls_remaining || 0}</div>
+          <div className="text-gray-400 text-xs">Free Video</div>
+        </div>
+        <div className="bg-white rounded-2xl p-3 shadow-sm text-center">
+          <div className="text-2xl">🎁</div>
+          <div className="font-bold text-gray-800">0</div>
+          <div className="text-gray-400 text-xs">Gifts</div>
         </div>
       </div>
 
@@ -177,13 +266,6 @@ export default function Dashboard() {
           <div>
             <div className="font-bold text-gray-800">Profile</div>
             <div className="text-gray-400 text-xs">Edit profile</div>
-          </div>
-        </a>
-        <a href="/admin" className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 hover:shadow-md transition">
-          <span className="text-3xl">⚙️</span>
-          <div>
-            <div className="font-bold text-gray-800">Admin</div>
-            <div className="text-gray-400 text-xs">Manage app</div>
           </div>
         </a>
       </div>
