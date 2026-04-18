@@ -1,6 +1,6 @@
 import Stripe from 'stripe'
 
-const stripe = new Stripe('sk_test_51TNIDiPhu5xCuZAU5qlNZkOqsMpd9LREjW2GdWv1mKUX006TP03cIoSyIxM8qd3ZC5vFW6u6plApL9RV1xj9AHzj00sjFGSWB9')
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
 export async function POST(request) {
   try {
