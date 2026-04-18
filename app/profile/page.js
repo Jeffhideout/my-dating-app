@@ -1,251 +1,240 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase } from './lib/supabase'
 
-export default function ProfilePage() {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+export default function AuthPage() {
+  const [isLogin, setIsLogin] = useState(true)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [username, setUsername] = useState('')
+  const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
-  const [profile, setProfile] = useState({
-    full_name: '',
-    age: '',
-    gender: '',
-    looking_for: '',
-    bio: '',
-    location: '',
-    interests: [],
-  })
-
-  const interestOptions = [
-    'Music', 'Travel', 'Gaming', 'Cooking', 'Fitness',
-    'Movies', 'Reading', 'Art', 'Sports', 'Photography',
-    'Dancing', 'Hiking', 'Fashion', 'Technology', 'Food'
-  ]
+  const [refCode, setRefCode] = useState('')
 
   useEffect(() => {
-    getProfile()
+    checkUser()
+    const urlParams = new URLSearchParams(window.location.search)
+    const ref = urlParams.get('ref')
+    if (ref) {
+      setRefCode(ref)
+      setIsLogin(false)
+    }
   }, [])
 
-  const getProfile = async () => {
+  const checkUser = async () => {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { window.location.href = '/'; return }
-    setUser(user)
+    if (user) {
+      window.location.href = '/dashboard'
+    }
+  }
 
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single()
-
-    if (data) {
-      setProfile({
-        full_name: data.full_name || '',
-        age: data.age || '',
-        gender: data.gender || '',
-        looking_for: data.looking_for || '',
-        bio: data.bio || '',
-        location: data.location || '',
-        interests: data.interests || [],
-      })
+  const handleLogin = async () => {
+    setLoading(true)
+    setMessage('')
+    if (!email || !password) {
+      setMessage('Please fill in all fields.')
+      setLoading(false)
+      return
+    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      setMessage(error.message)
+    } else {
+      setMessage('Login successful! Redirecting...')
+      window.location.href = '/dashboard'
     }
     setLoading(false)
   }
 
-  const toggleInterest = (interest) => {
-    setProfile(prev => ({
-      ...prev,
-      interests: prev.interests.includes(interest)
-        ? prev.interests.filter(i => i !== interest)
-        : [...prev.interests, interest]
-    }))
-  }
-
-  const saveProfile = async () => {
-    setSaving(true)
+  const handleRegister = async () => {
+    setLoading(true)
     setMessage('')
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        full_name: profile.full_name,
-        age: parseInt(profile.age),
-        gender: profile.gender,
-        looking_for: profile.looking_for,
-        bio: profile.bio,
-        location: profile.location,
-        interests: profile.interests,
-      })
-      .eq('id', user.id)
-
-    if (error) {
-      setMessage('Error saving profile: ' + error.message)
-    } else {
-      setMessage('Profile saved successfully!')
-      setTimeout(() => window.location.href = '/dashboard', 1500)
+    if (!username || !email || !password) {
+      setMessage('Please fill in all fields.')
+      setLoading(false)
+      return
     }
-    setSaving(false)
-  }
+    if (username.length < 3) {
+      setMessage('Username must be at least 3 characters.')
+      setLoading(false)
+      return
+    }
+    if (password.length < 6) {
+      setMessage('Password must be at least 6 characters.')
+      setLoading(false)
+      return
+    }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-pink-50 flex items-center justify-center">
-        <div className="text-pink-500 text-xl font-bold">Loading...</div>
-      </div>
-    )
+    const { data: existingUser } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('username', username)
+      .single()
+
+    if (existingUser) {
+      setMessage('Username already taken. Please choose another.')
+      setLoading(false)
+      return
+    }
+
+    const { data, error } = await supabase.auth.signUp({ email, password })
+    if (error) {
+      setMessage(error.message)
+      setLoading(false)
+      return
+    }
+
+    if (data.user) {
+      const newReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase()
+
+      await supabase.from('profiles').insert({
+        id: data.user.id,
+        username,
+        free_messages_remaining: 20,
+        free_audio_calls_remaining: 3,
+        free_video_calls_remaining: 2,
+        referral_code: newReferralCode,
+      })
+
+      await supabase.from('coin_wallets').insert({
+        user_id: data.user.id,
+        balance: 50,
+        total_purchased: 0,
+        total_spent: 0,
+      })
+
+      await supabase.from('coin_transactions').insert({
+        user_id: data.user.id,
+        type: 'bonus',
+        amount: 50,
+        description: 'Welcome bonus coins',
+        balance_after: 50,
+      })
+
+      if (refCode) {
+        try {
+          await supabase.rpc('handle_referral', {
+            new_user_id: data.user.id,
+            referral_code: refCode
+          })
+          setMessage('Account created! Referral bonus applied!')
+        } catch (e) {
+          setMessage('Account created! Setting up your profile...')
+        }
+      } else {
+        setMessage('Account created! Setting up your profile...')
+      }
+
+      setTimeout(() => window.location.href = '/profile', 1500)
+    }
+    setLoading(false)
   }
 
   return (
-    <div className="min-h-screen bg-pink-50 pb-10">
+    <div className="min-h-screen bg-gradient-to-br from-pink-500 via-red-400 to-orange-400 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md">
 
-      {/* Header */}
-      <div className="bg-white shadow-sm px-4 py-3 flex items-center gap-3">
-        <a href="/dashboard" className="text-gray-400 text-2xl">←</a>
-        <h1 className="font-bold text-gray-800 text-lg">Edit Profile</h1>
-      </div>
-
-      {/* Profile Photo */}
-      <div className="flex flex-col items-center mt-6">
-        <div className="w-24 h-24 bg-pink-200 rounded-full flex items-center justify-center text-5xl">
-          👤
-        </div>
-        <button className="mt-2 text-pink-500 text-sm font-semibold">
-          Change Photo
-        </button>
-      </div>
-
-      {/* Form */}
-      <div className="px-4 mt-6 space-y-4">
-
-        {/* Full Name */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm">
-          <label className="text-gray-500 text-sm font-semibold">Full Name</label>
-          <input
-            type="text"
-            value={profile.full_name}
-            onChange={(e) => setProfile({...profile, full_name: e.target.value})}
-            placeholder="Enter your full name"
-            className="w-full mt-1 border-b border-gray-100 py-2 focus:outline-none text-gray-800"
-          />
+        <div className="text-center mb-8">
+          <div className="text-5xl mb-2">💝</div>
+          <h1 className="text-3xl font-bold text-gray-800">HeartLink</h1>
+          <p className="text-gray-500 text-sm mt-1">Friendship & Dating App</p>
         </div>
 
-        {/* Age */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm">
-          <label className="text-gray-500 text-sm font-semibold">Age</label>
-          <input
-            type="number"
-            value={profile.age}
-            onChange={(e) => setProfile({...profile, age: e.target.value})}
-            placeholder="Your age (18+)"
-            min="18"
-            className="w-full mt-1 border-b border-gray-100 py-2 focus:outline-none text-gray-800"
-          />
-        </div>
-
-        {/* Gender */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm">
-          <label className="text-gray-500 text-sm font-semibold">Gender</label>
-          <div className="flex gap-2 mt-2 flex-wrap">
-            {['male', 'female', 'non-binary', 'other'].map(g => (
-              <button
-                key={g}
-                onClick={() => setProfile({...profile, gender: g})}
-                className={`px-4 py-2 rounded-full text-sm font-semibold capitalize transition-all ${
-                  profile.gender === g
-                    ? 'bg-pink-500 text-white'
-                    : 'bg-gray-100 text-gray-500'
-                }`}
-              >
-                {g}
-              </button>
-            ))}
+        {refCode && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-3 mb-4 text-center">
+            <p className="text-green-600 text-sm font-semibold">
+              🎉 You were invited! Register to get <span className="font-bold">50 bonus coins!</span>
+            </p>
           </div>
-        </div>
-
-        {/* Looking For */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm">
-          <label className="text-gray-500 text-sm font-semibold">Looking For</label>
-          <div className="flex gap-2 mt-2 flex-wrap">
-            {['friendship', 'dating', 'both'].map(l => (
-              <button
-                key={l}
-                onClick={() => setProfile({...profile, looking_for: l})}
-                className={`px-4 py-2 rounded-full text-sm font-semibold capitalize transition-all ${
-                  profile.looking_for === l
-                    ? 'bg-pink-500 text-white'
-                    : 'bg-gray-100 text-gray-500'
-                }`}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Location */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm">
-          <label className="text-gray-500 text-sm font-semibold">Location</label>
-          <input
-            type="text"
-            value={profile.location}
-            onChange={(e) => setProfile({...profile, location: e.target.value})}
-            placeholder="e.g. Nairobi, Kenya"
-            className="w-full mt-1 border-b border-gray-100 py-2 focus:outline-none text-gray-800"
-          />
-        </div>
-
-        {/* Bio */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm">
-          <label className="text-gray-500 text-sm font-semibold">Bio</label>
-          <textarea
-            value={profile.bio}
-            onChange={(e) => setProfile({...profile, bio: e.target.value})}
-            placeholder="Tell people about yourself..."
-            rows={3}
-            className="w-full mt-1 border-b border-gray-100 py-2 focus:outline-none text-gray-800 resize-none"
-          />
-        </div>
-
-        {/* Interests */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm">
-          <label className="text-gray-500 text-sm font-semibold">
-            Interests ({profile.interests.length} selected)
-          </label>
-          <div className="flex flex-wrap gap-2 mt-2">
-            {interestOptions.map(interest => (
-              <button
-                key={interest}
-                onClick={() => toggleInterest(interest)}
-                className={`px-3 py-1 rounded-full text-sm font-semibold transition-all ${
-                  profile.interests.includes(interest)
-                    ? 'bg-pink-500 text-white'
-                    : 'bg-gray-100 text-gray-500'
-                }`}
-              >
-                {interest}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Message */}
-        {message && (
-          <p className={`text-center text-sm font-semibold ${
-            message.includes('success') ? 'text-green-500' : 'text-red-500'
-          }`}>
-            {message}
-          </p>
         )}
 
-        {/* Save Button */}
-        <button
-          onClick={saveProfile}
-          disabled={saving}
-          className="w-full bg-gradient-to-r from-pink-500 to-red-400 text-white py-4 rounded-2xl font-bold text-lg shadow-lg hover:opacity-90 transition-all disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save Profile'}
-        </button>
+        <div className="flex bg-gray-100 rounded-2xl p-1 mb-6">
+          <button
+            onClick={() => { setIsLogin(true); setMessage('') }}
+            className={`flex-1 py-2 rounded-xl font-semibold transition-all ${
+              isLogin ? 'bg-pink-500 text-white shadow' : 'text-gray-500'
+            }`}
+          >
+            Login
+          </button>
+          <button
+            onClick={() => { setIsLogin(false); setMessage('') }}
+            className={`flex-1 py-2 rounded-xl font-semibold transition-all ${
+              !isLogin ? 'bg-pink-500 text-white shadow' : 'text-gray-500'
+            }`}
+          >
+            Register
+          </button>
+        </div>
 
+        <div className="space-y-4">
+          {!isLogin && (
+            <input
+              type="text"
+              placeholder="Username (min 3 characters, no spaces)"
+              value={username}
+              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+              className="w-full border border-gray-200 rounded-2xl px-4 py-3 focus:outline-none focus:border-pink-400 text-gray-800"
+            />
+          )}
+          <input
+            type="email"
+            placeholder="Email address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full border border-gray-200 rounded-2xl px-4 py-3 focus:outline-none focus:border-pink-400 text-gray-800"
+          />
+          <input
+            type="password"
+            placeholder="Password (min 6 characters)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full border border-gray-200 rounded-2xl px-4 py-3 focus:outline-none focus:border-pink-400 text-gray-800"
+          />
+
+          {!isLogin && (
+            <input
+              type="text"
+              placeholder="Referral code (optional)"
+              value={refCode}
+              onChange={(e) => setRefCode(e.target.value.toUpperCase())}
+              className="w-full border border-gray-200 rounded-2xl px-4 py-3 focus:outline-none focus:border-pink-400 text-gray-800"
+            />
+          )}
+
+          {message && (
+            <p className={`text-sm text-center font-semibold ${
+              message.includes('success') || message.includes('created') || message.includes('Setting') || message.includes('bonus')
+                ? 'text-green-500' : 'text-red-500'
+            }`}>
+              {message}
+            </p>
+          )}
+
+          <button
+            onClick={isLogin ? handleLogin : handleRegister}
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-pink-500 to-red-400 text-white py-3 rounded-2xl font-bold text-lg shadow-lg hover:opacity-90 transition-all disabled:opacity-50"
+          >
+            {loading ? 'Please wait...' : isLogin ? 'Login' : 'Create Account'}
+          </button>
+        </div>
+
+        {!isLogin && (
+          <div className="mt-4 bg-pink-50 rounded-2xl p-3 text-center">
+            <p className="text-pink-600 text-sm font-semibold">
+              🎁 Welcome Bonus: 50 free coins + 20 free messages!
+            </p>
+            <p className="text-pink-400 text-xs mt-1">
+              📞 3 free audio calls + 📹 2 free video calls
+            </p>
+          </div>
+        )}
+
+        <p className="text-center text-gray-400 text-xs mt-6">
+          By continuing you agree to our Terms & Privacy Policy
+        </p>
       </div>
     </div>
   )

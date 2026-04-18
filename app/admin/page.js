@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 const ADMIN_EMAIL = 'kesslervinci672@gmail.com'
-const ADMIN_PASSWORD = 'Lfk6rh123.' 
+const ADMIN_PASSWORD = 'Lfk6rh123.'
 
 export default function AdminPage() {
   const [authorized, setAuthorized] = useState(false)
