@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { supabase } from '../app/lib/supabase'
+import { supabase } from './lib/supabase'
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true)
@@ -27,6 +27,18 @@ export default function AuthPage() {
     setLoading(true)
     setMessage('')
 
+    if (!username || !email || !password) {
+      setMessage('Please fill in all fields.')
+      setLoading(false)
+      return
+    }
+
+    if (password.length < 6) {
+      setMessage('Password must be at least 6 characters.')
+      setLoading(false)
+      return
+    }
+
     // Check if username is taken
     const { data: existingUser } = await supabase
       .from('profiles')
@@ -48,22 +60,27 @@ export default function AuthPage() {
       return
     }
 
-    // Create profile
     if (data.user) {
+      // Create profile
       await supabase.from('profiles').insert({
         id: data.user.id,
         username,
         free_messages_remaining: 20,
+        free_audio_calls_remaining: 3,
+        free_video_calls_remaining: 2,
         referral_code: Math.random().toString(36).substring(2, 8).toUpperCase(),
       })
 
-      // Create coin wallet
+      // Create coin wallet with welcome bonus
       await supabase.from('coin_wallets').insert({
         user_id: data.user.id,
-        balance: 50, // welcome bonus coins
+        balance: 50,
+        total_purchased: 0,
+        total_spent: 0,
       })
 
-      setMessage('Account created! Please check your email to verify.')
+      setMessage('Account created! Setting up your profile...')
+      setTimeout(() => window.location.href = '/profile', 1500)
     }
     setLoading(false)
   }
@@ -82,7 +99,7 @@ export default function AuthPage() {
         {/* Toggle */}
         <div className="flex bg-gray-100 rounded-2xl p-1 mb-6">
           <button
-            onClick={() => setIsLogin(true)}
+            onClick={() => { setIsLogin(true); setMessage('') }}
             className={`flex-1 py-2 rounded-xl font-semibold transition-all ${
               isLogin ? 'bg-pink-500 text-white shadow' : 'text-gray-500'
             }`}
@@ -90,7 +107,7 @@ export default function AuthPage() {
             Login
           </button>
           <button
-            onClick={() => setIsLogin(false)}
+            onClick={() => { setIsLogin(false); setMessage('') }}
             className={`flex-1 py-2 rounded-xl font-semibold transition-all ${
               !isLogin ? 'bg-pink-500 text-white shadow' : 'text-gray-500'
             }`}
@@ -104,9 +121,9 @@ export default function AuthPage() {
           {!isLogin && (
             <input
               type="text"
-              placeholder="Username"
+              placeholder="Username (no spaces)"
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
               className="w-full border border-gray-200 rounded-2xl px-4 py-3 focus:outline-none focus:border-pink-400"
             />
           )}
@@ -119,14 +136,18 @@ export default function AuthPage() {
           />
           <input
             type="password"
-            placeholder="Password"
+            placeholder="Password (min 6 characters)"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full border border-gray-200 rounded-2xl px-4 py-3 focus:outline-none focus:border-pink-400"
           />
 
           {message && (
-            <p className={`text-sm text-center ${message.includes('success') || message.includes('created') ? 'text-green-500' : 'text-red-500'}`}>
+            <p className={`text-sm text-center font-semibold ${
+              message.includes('success') || message.includes('created') || message.includes('Setting')
+                ? 'text-green-500'
+                : 'text-red-500'
+            }`}>
               {message}
             </p>
           )}
@@ -143,7 +164,12 @@ export default function AuthPage() {
         {/* Welcome bonus */}
         {!isLogin && (
           <div className="mt-4 bg-pink-50 rounded-2xl p-3 text-center">
-            <p className="text-pink-600 text-sm font-semibold">🎁 Welcome Bonus: 50 free coins + 20 free messages!</p>
+            <p className="text-pink-600 text-sm font-semibold">
+              🎁 Welcome Bonus: 50 free coins + 20 free messages!
+            </p>
+            <p className="text-pink-400 text-xs mt-1">
+              📞 3 free audio calls + 📹 2 free video calls
+            </p>
           </div>
         )}
 
