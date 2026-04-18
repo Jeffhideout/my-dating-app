@@ -6,6 +6,7 @@ export default function Dashboard() {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [wallet, setWallet] = useState(null)
+  const [pendingRequests, setPendingRequests] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -33,6 +34,15 @@ export default function Dashboard() {
       .eq('user_id', user.id)
       .single()
     setWallet(wallet)
+
+    // Get pending requests count
+    const { count } = await supabase
+      .from('connections')
+      .select('*', { count: 'exact', head: true })
+      .eq('receiver_id', user.id)
+      .eq('status', 'pending')
+    setPendingRequests(count || 0)
+
     setLoading(false)
   }
 
@@ -135,6 +145,18 @@ export default function Dashboard() {
             <div className="font-bold text-gray-800">Chats</div>
             <div className="text-gray-400 text-xs">Your messages</div>
           </div>
+        </a>
+        <a href="/notifications" className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 hover:shadow-md transition relative">
+          <span className="text-3xl">🔔</span>
+          <div>
+            <div className="font-bold text-gray-800">Requests</div>
+            <div className="text-gray-400 text-xs">Friend requests</div>
+          </div>
+          {pendingRequests > 0 && (
+            <span className="absolute top-2 right-2 bg-pink-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
+              {pendingRequests}
+            </span>
+          )}
         </a>
         <a href="/gifts" className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 hover:shadow-md transition">
           <span className="text-3xl">🎁</span>
