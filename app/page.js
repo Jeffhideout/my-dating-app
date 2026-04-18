@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 
 export default function AuthPage() {
@@ -9,10 +9,37 @@ export default function AuthPage() {
   const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+  const [refCode, setRefCode] = useState('')
+
+  useEffect(() => {
+    // Check if user is already logged in
+    checkUser()
+    // Get referral code from URL
+    const urlParams = new URLSearchParams(window.location.search)
+    const ref = urlParams.get('ref')
+    if (ref) {
+      setRefCode(ref)
+      setIsLogin(false) // Switch to register tab
+    }
+  }, [])
+
+  const checkUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      window.location.href = '/dashboard'
+    }
+  }
 
   const handleLogin = async () => {
     setLoading(true)
     setMessage('')
+
+    if (!email || !password) {
+      setMessage('Please fill in all fields.')
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setMessage(error.message)
@@ -29,6 +56,12 @@ export default function AuthPage() {
 
     if (!username || !email || !password) {
       setMessage('Please fill in all fields.')
+      setLoading(false)
+      return
+    }
+
+    if (username.length < 3) {
+      setMessage('Username must be at least 3 characters.')
       setLoading(false)
       return
     }
@@ -61,6 +94,8 @@ export default function AuthPage() {
     }
 
     if (data.user) {
+      const newReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase()
+
       // Create profile
       await supabase.from('profiles').insert({
         id: data.user.id,
@@ -68,7 +103,7 @@ export default function AuthPage() {
         free_messages_remaining: 20,
         free_audio_calls_remaining: 3,
         free_video_calls_remaining: 2,
-        referral_code: Math.random().toString(36).substring(2, 8).toUpperCase(),
+        referral_code: newReferralCode,
       })
 
       // Create coin wallet with welcome bonus
@@ -79,7 +114,30 @@ export default function AuthPage() {
         total_spent: 0,
       })
 
-      setMessage('Account created! Setting up your profile...')
+      // Log welcome bonus transaction
+      await supabase.from('coin_transactions').insert({
+        user_id: data.user.id,
+        type: 'bonus',
+        amount: 50,
+        description: 'Welcome bonus coins',
+        balance_after: 50,
+      })
+
+      // Handle referral if code exists
+      if (refCode) {
+        try {
+          await supabase.rpc('handle_referral', {
+            new_user_id: data.user.id,
+            referral_code: refCode
+          })
+          setMessage('Account created! Referral bonus applied! Setting up your profile...')
+        } catch (e) {
+          setMessage('Account created! Setting up your profile...')
+        }
+      } else {
+        setMessage('Account created! Setting up your profile...')
+      }
+
       setTimeout(() => window.location.href = '/profile', 1500)
     }
     setLoading(false)
@@ -95,6 +153,15 @@ export default function AuthPage() {
           <h1 className="text-3xl font-bold text-gray-800">HeartLink</h1>
           <p className="text-gray-500 text-sm mt-1">Friendship & Dating App</p>
         </div>
+
+        {/* Referral Banner */}
+        {refCode && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-3 mb-4 text-center">
+            <p className="text-green-600 text-sm font-semibold">
+              🎉 You were invited! Register to get <span className="font-bold">50 bonus coins!</span>
+            </p>
+          </div>
+        )}
 
         {/* Toggle */}
         <div className="flex bg-gray-100 rounded-2xl p-1 mb-6">
@@ -121,7 +188,7 @@ export default function AuthPage() {
           {!isLogin && (
             <input
               type="text"
-              placeholder="Username (no spaces)"
+              placeholder="Username (min 3 characters, no spaces)"
               value={username}
               onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
               className="w-full border border-gray-200 rounded-2xl px-4 py-3 focus:outline-none focus:border-pink-400"
@@ -142,9 +209,19 @@ export default function AuthPage() {
             className="w-full border border-gray-200 rounded-2xl px-4 py-3 focus:outline-none focus:border-pink-400"
           />
 
+          {!isLogin && (
+            <input
+              type="text"
+              placeholder="Referral code (optional)"
+              value={refCode}
+              onChange={(e) => setRefCode(e.target.value.toUpperCase())}
+              className="w-full border border-gray-200 rounded-2xl px-4 py-3 focus:outline-none focus:border-pink-400"
+            />
+          )}
+
           {message && (
             <p className={`text-sm text-center font-semibold ${
-              message.includes('success') || message.includes('created') || message.includes('Setting')
+              message.includes('success') || message.includes('created') || message.includes('Setting') || message.includes('bonus')
                 ? 'text-green-500'
                 : 'text-red-500'
             }`}>
