@@ -186,7 +186,7 @@ export default function Dashboard() {
         <button
           onClick={() => setActiveTab('nearby')}
           className={`flex-1 py-2 text-sm font-bold border-b-2 transition-all ${
-            activeTab === 'nearby' ? 'border-pink-500 text-pink-500' : 'border-transparent text-gray-40
+            activeTab === 'nearby' ? 'border-pink-500 text-pink-500' : 'border-transparent text-gray-400'
           }`}
         >
           Nearby
