@@ -1,10 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
-export default function UserProfilePage() {
-  const params = useParams()
+export default function UserProfilePage({ params }) {
   const userId = params.id
 
   const [currentUser, setCurrentUser] = useState(null)
@@ -19,56 +17,56 @@ export default function UserProfilePage() {
   const [replyText, setReplyText] = useState({})
   const [showReply, setShowReply] = useState({})
 
-  const COUNTRY_FLAGS = {
-    'kenya': '🇰🇪', 'nigeria': '🇳🇬', 'ghana': '🇬🇭', 'uganda': '🇺🇬',
-    'nairobi': '🇰🇪', 'mombasa': '🇰🇪', 'kisumu': '🇰🇪', 'eldoret': '🇰🇪',
-    'usa': '🇺🇸', 'uk': '🇬🇧', 'south africa': '🇿🇦',
-  }
-
   function getFlag(location) {
     if (!location) return '🌍'
+    const flags = {
+      'kenya': '🇰🇪', 'nigeria': '🇳🇬', 'ghana': '🇬🇭', 'uganda': '🇺🇬',
+      'nairobi': '🇰🇪', 'mombasa': '🇰🇪', 'kisumu': '🇰🇪', 'eldoret': '🇰🇪',
+      'usa': '🇺🇸', 'uk': '🇬🇧', 'south africa': '🇿🇦', 'tanzania': '🇹🇿',
+    }
     const lower = location.toLowerCase()
-    for (const [key, flag] of Object.entries(COUNTRY_FLAGS)) {
+    for (const [key, flag] of Object.entries(flags)) {
       if (lower.includes(key)) return flag
     }
     return '🌍'
   }
 
   useEffect(() => {
-    getUser()
+    if (userId) getUser()
   }, [userId])
 
   const getUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { window.location.href = '/'; return }
-    setCurrentUser(user)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { window.location.href = '/'; return }
+      setCurrentUser(user)
 
-    // Get profile
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-    setProfile(profileData)
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+      setProfile(profileData)
 
-    // Get posts
-    const { data: postsData } = await supabase
-      .from('posts')
-      .select('*, post_likes(user_id), post_comments(count)')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-    setPosts(postsData || [])
+      const { data: postsData } = await supabase
+        .from('posts')
+        .select('*, post_likes(user_id), post_comments(count)')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+      setPosts(postsData || [])
 
-    // Check connection status
-    const { data: connection } = await supabase
-      .from('connections')
-      .select('*')
-      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
-      .single()
-    setConnectionStatus(connection)
+      const { data: connection } = await supabase
+        .from('connections')
+        .select('*')
+        .or(`and(sender_id.eq.${user.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${user.id})`)
+        .maybeSingle()
+      setConnectionStatus(connection)
 
-    setLoading(false)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const sendRequest = async (type) => {
@@ -151,7 +149,10 @@ export default function UserProfilePage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-pink-500 text-xl font-bold">Loading...</div>
+        <div className="text-center">
+          <div className="text-5xl mb-3">💝</div>
+          <div className="text-pink-500 font-bold">Loading profile...</div>
+        </div>
       </div>
     )
   }
@@ -159,7 +160,13 @@ export default function UserProfilePage() {
   if (!profile) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-500">User not found</div>
+        <div className="text-center">
+          <div className="text-5xl mb-3">😔</div>
+          <div className="text-gray-500 font-bold">User not found</div>
+          <a href="/dashboard" className="mt-4 inline-block bg-pink-500 text-white px-6 py-2 rounded-full font-bold">
+            Go Back
+          </a>
+        </div>
       </div>
     )
   }
@@ -179,8 +186,6 @@ export default function UserProfilePage() {
 
       {/* Profile Card */}
       <div className="bg-white mx-4 mt-4 rounded-2xl shadow-sm overflow-hidden">
-
-        {/* Cover/Photo */}
         <div className="h-32 bg-gradient-to-r from-pink-400 to-red-400 relative">
           <div className="absolute -bottom-10 left-4">
             <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white bg-pink-200 flex items-center justify-center">
@@ -194,35 +199,30 @@ export default function UserProfilePage() {
         </div>
 
         <div className="pt-12 px-4 pb-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <h2 className="font-bold text-gray-900 text-xl">
-                {profile.full_name || profile.username}
-                {profile.age ? `, ${profile.age}` : ''}
-              </h2>
-              <p className="text-gray-400 text-sm">@{profile.username}</p>
-              {profile.location && (
-                <p className="text-gray-500 text-sm mt-1">
-                  {getFlag(profile.location)} {profile.location}
-                </p>
-              )}
-              {profile.looking_for && (
-                <span className={`text-xs px-2 py-0.5 rounded-full mt-1 inline-block font-semibold ${
-                  profile.looking_for === 'dating' ? 'bg-red-100 text-red-500' :
-                  profile.looking_for === 'friendship' ? 'bg-blue-100 text-blue-500' :
-                  'bg-purple-100 text-purple-500'
-                }`}>
-                  {profile.looking_for}
-                </span>
-              )}
-            </div>
-          </div>
+          <h2 className="font-bold text-gray-900 text-xl">
+            {profile.full_name || profile.username}
+            {profile.age ? `, ${profile.age}` : ''}
+          </h2>
+          <p className="text-gray-400 text-sm">@{profile.username}</p>
+          {profile.location && (
+            <p className="text-gray-500 text-sm mt-1">
+              {getFlag(profile.location)} {profile.location}
+            </p>
+          )}
+          {profile.looking_for && (
+            <span className={`text-xs px-2 py-0.5 rounded-full mt-2 inline-block font-semibold ${
+              profile.looking_for === 'dating' ? 'bg-red-100 text-red-500' :
+              profile.looking_for === 'friendship' ? 'bg-blue-100 text-blue-500' :
+              'bg-purple-100 text-purple-500'
+            }`}>
+              {profile.looking_for}
+            </span>
+          )}
 
           {profile.bio && (
             <p className="text-gray-600 text-sm mt-3">{profile.bio}</p>
           )}
 
-          {/* Interests */}
           {profile.interests?.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-3">
               {profile.interests.map(interest => (
@@ -233,21 +233,20 @@ export default function UserProfilePage() {
             </div>
           )}
 
-          {/* Action Buttons */}
           {!isOwnProfile && (
             <div className="flex gap-2 mt-4">
               <button
                 onClick={() => sendRequest('friendship')}
-                disabled={connectionStatus}
+                disabled={!!connectionStatus}
                 className={`flex-1 py-2 rounded-xl font-bold text-sm ${
                   connectionStatus ? 'bg-gray-100 text-gray-400' : 'bg-blue-500 text-white'
                 }`}
               >
-                {connectionStatus ? '✓ Requested' : '👋 Add Friend'}
+                {connectionStatus ? '✓ Requested' : '👋 Friend'}
               </button>
               <button
                 onClick={() => sendRequest('dating')}
-                disabled={connectionStatus}
+                disabled={!!connectionStatus}
                 className={`flex-1 py-2 rounded-xl font-bold text-sm ${
                   connectionStatus ? 'bg-gray-100 text-gray-400' : 'bg-pink-500 text-white'
                 }`}
@@ -266,11 +265,11 @@ export default function UserProfilePage() {
       </div>
 
       {/* Photos */}
-      {profile.photos?.length > 0 && (
+      {(profile.photos?.length > 0 || profile.profile_photo) && (
         <div className="mx-4 mt-4">
           <h3 className="font-bold text-gray-800 mb-2">📸 Photos</h3>
           <div className="grid grid-cols-3 gap-2">
-            {[profile.profile_photo, ...profile.photos].filter(Boolean).map((photo, i) => (
+            {[profile.profile_photo, ...(profile.photos || [])].filter(Boolean).map((photo, i) => (
               <div key={i} className="aspect-square rounded-xl overflow-hidden">
                 <img src={photo} alt="" className="w-full h-full object-cover" />
               </div>
@@ -299,9 +298,7 @@ export default function UserProfilePage() {
                     <div className="w-10 h-10 bg-pink-200 rounded-full overflow-hidden flex items-center justify-center">
                       {profile.profile_photo ? (
                         <img src={profile.profile_photo} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <span>👤</span>
-                      )}
+                      ) : <span>👤</span>}
                     </div>
                     <div>
                       <div className="font-bold text-gray-900 text-sm">
@@ -362,9 +359,7 @@ export default function UserProfilePage() {
                           <div className="w-8 h-8 bg-pink-100 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center">
                             {comment.profiles?.profile_photo ? (
                               <img src={comment.profiles.profile_photo} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <span className="text-xs">👤</span>
-                            )}
+                            ) : <span className="text-xs">👤</span>}
                           </div>
                           <div className="flex-1">
                             <div className="bg-gray-50 rounded-2xl px-3 py-2">
@@ -408,9 +403,7 @@ export default function UserProfilePage() {
                                 <div className="w-6 h-6 bg-pink-100 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center">
                                   {reply.profiles?.profile_photo ? (
                                     <img src={reply.profiles.profile_photo} alt="" className="w-full h-full object-cover" />
-                                  ) : (
-                                    <span className="text-xs">👤</span>
-                                  )}
+                                  ) : <span className="text-xs">👤</span>}
                                 </div>
                                 <div className="bg-gray-50 rounded-2xl px-3 py-2 flex-1">
                                   <div className="font-bold text-gray-800 text-xs">
@@ -454,7 +447,6 @@ export default function UserProfilePage() {
         )}
       </div>
 
-      {/* Message */}
       {message && (
         <div className="fixed bottom-4 left-4 right-4 bg-green-500 text-white text-center py-3 rounded-2xl font-bold shadow-lg z-50">
           {message}
