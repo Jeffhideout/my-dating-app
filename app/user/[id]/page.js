@@ -3,8 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 
 export default function UserProfilePage({ params }) {
-  const userId = params.id
-
+  const [userId, setUserId] = useState(null)
   const [currentUser, setCurrentUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [posts, setPosts] = useState([])
@@ -30,6 +29,14 @@ export default function UserProfilePage({ params }) {
     }
     return '🌍'
   }
+
+  useEffect(() => {
+    const resolveParams = async () => {
+      const resolvedParams = await Promise.resolve(params)
+      setUserId(resolvedParams.id)
+    }
+    resolveParams()
+  }, [params])
 
   useEffect(() => {
     if (userId) getUser()
@@ -288,7 +295,7 @@ export default function UserProfilePage({ params }) {
         ) : (
           <div className="space-y-3">
             {posts.map(post => {
-              const isLiked = post.post_likes?.some(l => l.user_id === currentUser.id)
+              const isLiked = post.post_likes?.some(l => l.user_id === currentUser?.id)
               const likesCount = post.post_likes?.length || 0
               const commentsCount = post.post_comments?.[0]?.count || 0
 
