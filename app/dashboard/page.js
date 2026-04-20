@@ -267,7 +267,7 @@ export default function Dashboard() {
 
                   {/* Info */}
                   <div className="p-2">
-                    <a href={`/user/${u.id}`}>
+                    <a href={`/view?id=${u.id}`}>
                       <div className="font-bold text-gray-900 text-xs truncate">
                         {u.full_name || u.username}{u.age ? `, ${u.age}` : ''}
                       </div>
