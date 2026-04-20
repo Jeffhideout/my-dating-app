@@ -1,9 +1,8 @@
-
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 
-export default function UserProfilePage({ params }) {
+export default function UserProfilePage() {
   const [userId, setUserId] = useState(null)
   const [currentUser, setCurrentUser] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -35,12 +34,13 @@ export default function UserProfilePage({ params }) {
   }
 
   useEffect(() => {
-    const resolveParams = async () => {
-      const resolvedParams = await Promise.resolve(params)
-      setUserId(resolvedParams.id)
+    // Get user ID from URL path
+    const pathParts = window.location.pathname.split('/')
+    const id = pathParts[pathParts.length - 1]
+    if (id) {
+      setUserId(id)
     }
-    resolveParams()
-  }, [params])
+  }, [])
 
   useEffect(() => {
     if (userId) loadData()
@@ -52,17 +52,14 @@ export default function UserProfilePage({ params }) {
       if (!user) { window.location.href = '/'; return }
       setCurrentUser(user)
 
-      // Get current user profile
       const { data: cp } = await supabase
         .from('profiles').select('*').eq('id', user.id).single()
       setCurrentProfile(cp)
 
-      // Get viewed profile
       const { data: profileData } = await supabase
         .from('profiles').select('*').eq('id', userId).single()
       setProfile(profileData)
 
-      // Get posts
       const { data: postsData } = await supabase
         .from('posts')
         .select('*, post_likes(user_id), post_comments(count)')
@@ -70,7 +67,6 @@ export default function UserProfilePage({ params }) {
         .order('created_at', { ascending: false })
       setPosts(postsData || [])
 
-      // Get connection status
       const { data: connection } = await supabase
         .from('connections')
         .select('*')
@@ -78,7 +74,6 @@ export default function UserProfilePage({ params }) {
         .maybeSingle()
       setConnectionStatus(connection)
 
-      // Get liked photos
       const { data: photoLikes } = await supabase
         .from('photo_likes')
         .select('photo_url')
@@ -106,7 +101,6 @@ export default function UserProfilePage({ params }) {
     if (error) {
       setMessage('Already sent a request!')
     } else {
-      // Send notification
       await supabase.from('notifications').insert({
         user_id: userId,
         type: 'connection_request',
@@ -122,7 +116,6 @@ export default function UserProfilePage({ params }) {
 
   const togglePhotoLike = async (photoUrl) => {
     const isLiked = likedPhotos.includes(photoUrl)
-
     if (isLiked) {
       await supabase.from('photo_likes').delete()
         .eq('photo_url', photoUrl)
@@ -136,8 +129,6 @@ export default function UserProfilePage({ params }) {
         profile_id: userId,
       })
       setLikedPhotos(prev => [...prev, photoUrl])
-
-      // Notify owner
       if (userId !== currentUser.id) {
         await supabase.from('notifications').insert({
           user_id: userId,
@@ -153,7 +144,6 @@ export default function UserProfilePage({ params }) {
   const toggleLike = async (postId) => {
     const post = posts.find(p => p.id === postId)
     const isLiked = post?.post_likes?.some(l => l.user_id === currentUser.id)
-
     if (isLiked) {
       await supabase.from('post_likes').delete()
         .eq('post_id', postId).eq('user_id', currentUser.id)
@@ -161,7 +151,6 @@ export default function UserProfilePage({ params }) {
       await supabase.from('post_likes').insert({
         post_id: postId, user_id: currentUser.id
       })
-      // Notify post owner
       if (userId !== currentUser.id) {
         await supabase.from('notifications').insert({
           user_id: userId,
@@ -172,7 +161,6 @@ export default function UserProfilePage({ params }) {
         })
       }
     }
-
     const { data: postsData } = await supabase
       .from('posts')
       .select('*, post_likes(user_id), post_comments(count)')
@@ -202,7 +190,6 @@ export default function UserProfilePage({ params }) {
     await supabase.from('post_comments').insert({
       post_id: postId, user_id: currentUser.id, content: text,
     })
-    // Notify post owner
     if (userId !== currentUser.id) {
       await supabase.from('notifications').insert({
         user_id: userId,
@@ -316,7 +303,6 @@ export default function UserProfilePage({ params }) {
             </div>
           )}
 
-          {/* Action Buttons */}
           {!isOwnProfile && (
             <div className="grid grid-cols-2 gap-2 mt-4">
               <button
@@ -347,7 +333,7 @@ export default function UserProfilePage({ params }) {
                 🎁 Send Gift
               </a>
               <a
-                href={`/chat`}
+                href="/chat"
                 className="py-2.5 rounded-xl font-bold text-sm bg-gray-800 text-white text-center"
               >
                 💬 Message
@@ -392,7 +378,6 @@ export default function UserProfilePage({ params }) {
               const isLiked = post.post_likes?.some(l => l.user_id === currentUser?.id)
               const likesCount = post.post_likes?.length || 0
               const commentsCount = post.post_comments?.[0]?.count || 0
-
               return (
                 <div key={post.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
                   <div className="flex items-center gap-3 p-4 pb-2">
@@ -414,17 +399,16 @@ export default function UserProfilePage({ params }) {
                   {post.content && (
                     <p className="text-gray-800 text-sm px-4 pb-2">{post.content}</p>
                   )}
-
                   {post.image_url && (
                     <img src={post.image_url} alt="Post" className="w-full object-cover max-h-80" />
                   )}
 
                   {(likesCount > 0 || commentsCount > 0) && (
                     <div className="flex items-center gap-3 px-4 py-2 text-xs text-gray-400">
-                      {likesCount > 0 && <span>❤️ {likesCount} {likesCount === 1 ? 'like' : 'likes'}</span>}
+                      {likesCount > 0 && <span>❤️ {likesCount} likes</span>}
                       {commentsCount > 0 && (
                         <button onClick={() => toggleComments(post.id)}>
-                          💬 {commentsCount} {commentsCount === 1 ? 'comment' : 'comments'}
+                          💬 {commentsCount} comments
                         </button>
                       )}
                     </div>
@@ -433,7 +417,7 @@ export default function UserProfilePage({ params }) {
                   <div className="flex border-t border-gray-50 mx-4">
                     <button
                       onClick={() => toggleLike(post.id)}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-semibold transition-all ${
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-semibold ${
                         isLiked ? 'text-pink-500' : 'text-gray-400'
                       }`}
                     >
@@ -480,7 +464,6 @@ export default function UserProfilePage({ params }) {
                                 Reply
                               </button>
                             </div>
-
                             {showReply[comment.id] && (
                               <div className="flex gap-2 mt-2">
                                 <input
@@ -498,7 +481,6 @@ export default function UserProfilePage({ params }) {
                                 </button>
                               </div>
                             )}
-
                             {comment.replies?.map(reply => (
                               <div key={reply.id} className="flex gap-2 mt-2 ml-4">
                                 <div className="w-6 h-6 bg-pink-100 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center">
@@ -517,7 +499,6 @@ export default function UserProfilePage({ params }) {
                           </div>
                         </div>
                       ))}
-
                       <div className="flex gap-2 mt-2">
                         <div className="w-8 h-8 bg-pink-200 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center">
                           {currentProfile?.profile_photo ? (
