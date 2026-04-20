@@ -1,3 +1,4 @@
+
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
@@ -6,6 +7,7 @@ export default function UserProfilePage({ params }) {
   const [userId, setUserId] = useState(null)
   const [currentUser, setCurrentUser] = useState(null)
   const [profile, setProfile] = useState(null)
+  const [currentProfile, setCurrentProfile] = useState(null)
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [connectionStatus, setConnectionStatus] = useState(null)
@@ -15,13 +17,15 @@ export default function UserProfilePage({ params }) {
   const [comments, setComments] = useState({})
   const [replyText, setReplyText] = useState({})
   const [showReply, setShowReply] = useState({})
+  const [likedPhotos, setLikedPhotos] = useState([])
 
   function getFlag(location) {
     if (!location) return '🌍'
     const flags = {
       'kenya': '🇰🇪', 'nigeria': '🇳🇬', 'ghana': '🇬🇭', 'uganda': '🇺🇬',
       'nairobi': '🇰🇪', 'mombasa': '🇰🇪', 'kisumu': '🇰🇪', 'eldoret': '🇰🇪',
-      'usa': '🇺🇸', 'uk': '🇬🇧', 'south africa': '🇿🇦', 'tanzania': '🇹🇿',
+      'nakuru': '🇰🇪', 'usa': '🇺🇸', 'uk': '🇬🇧', 'south africa': '🇿🇦',
+      'tanzania': '🇹🇿', 'ethiopia': '🇪🇹', 'rwanda': '🇷🇼',
     }
     const lower = location.toLowerCase()
     for (const [key, flag] of Object.entries(flags)) {
@@ -39,22 +43,26 @@ export default function UserProfilePage({ params }) {
   }, [params])
 
   useEffect(() => {
-    if (userId) getUser()
+    if (userId) loadData()
   }, [userId])
 
-  const getUser = async () => {
+  const loadData = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { window.location.href = '/'; return }
       setCurrentUser(user)
 
+      // Get current user profile
+      const { data: cp } = await supabase
+        .from('profiles').select('*').eq('id', user.id).single()
+      setCurrentProfile(cp)
+
+      // Get viewed profile
       const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
+        .from('profiles').select('*').eq('id', userId).single()
       setProfile(profileData)
 
+      // Get posts
       const { data: postsData } = await supabase
         .from('posts')
         .select('*, post_likes(user_id), post_comments(count)')
@@ -62,12 +70,21 @@ export default function UserProfilePage({ params }) {
         .order('created_at', { ascending: false })
       setPosts(postsData || [])
 
+      // Get connection status
       const { data: connection } = await supabase
         .from('connections')
         .select('*')
         .or(`and(sender_id.eq.${user.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${user.id})`)
         .maybeSingle()
       setConnectionStatus(connection)
+
+      // Get liked photos
+      const { data: photoLikes } = await supabase
+        .from('photo_likes')
+        .select('photo_url')
+        .eq('user_id', user.id)
+        .eq('profile_id', userId)
+      setLikedPhotos(photoLikes?.map(l => l.photo_url) || [])
 
     } catch (err) {
       console.error(err)
@@ -89,10 +106,48 @@ export default function UserProfilePage({ params }) {
     if (error) {
       setMessage('Already sent a request!')
     } else {
+      // Send notification
+      await supabase.from('notifications').insert({
+        user_id: userId,
+        type: 'connection_request',
+        title: 'New Connection Request!',
+        body: `${currentProfile?.full_name || currentProfile?.username} sent you a ${type} request`,
+        reference_id: currentUser.id,
+      })
       setMessage(`${type === 'dating' ? '💝 Dating' : '👋 Friend'} request sent!`)
-      setConnectionStatus({ status: 'pending' })
+      setConnectionStatus({ status: 'pending', type })
     }
     setTimeout(() => setMessage(''), 3000)
+  }
+
+  const togglePhotoLike = async (photoUrl) => {
+    const isLiked = likedPhotos.includes(photoUrl)
+
+    if (isLiked) {
+      await supabase.from('photo_likes').delete()
+        .eq('photo_url', photoUrl)
+        .eq('user_id', currentUser.id)
+        .eq('profile_id', userId)
+      setLikedPhotos(prev => prev.filter(p => p !== photoUrl))
+    } else {
+      await supabase.from('photo_likes').insert({
+        photo_url: photoUrl,
+        user_id: currentUser.id,
+        profile_id: userId,
+      })
+      setLikedPhotos(prev => [...prev, photoUrl])
+
+      // Notify owner
+      if (userId !== currentUser.id) {
+        await supabase.from('notifications').insert({
+          user_id: userId,
+          type: 'photo_liked',
+          title: 'Someone liked your photo! ❤️',
+          body: `${currentProfile?.full_name || currentProfile?.username} liked your photo`,
+          reference_id: currentUser.id,
+        })
+      }
+    }
   }
 
   const toggleLike = async (postId) => {
@@ -106,6 +161,16 @@ export default function UserProfilePage({ params }) {
       await supabase.from('post_likes').insert({
         post_id: postId, user_id: currentUser.id
       })
+      // Notify post owner
+      if (userId !== currentUser.id) {
+        await supabase.from('notifications').insert({
+          user_id: userId,
+          type: 'post_liked',
+          title: 'Someone liked your post! ❤️',
+          body: `${currentProfile?.full_name || currentProfile?.username} liked your post`,
+          reference_id: postId,
+        })
+      }
     }
 
     const { data: postsData } = await supabase
@@ -137,6 +202,16 @@ export default function UserProfilePage({ params }) {
     await supabase.from('post_comments').insert({
       post_id: postId, user_id: currentUser.id, content: text,
     })
+    // Notify post owner
+    if (userId !== currentUser.id) {
+      await supabase.from('notifications').insert({
+        user_id: userId,
+        type: 'post_commented',
+        title: 'New comment on your post! 💬',
+        body: `${currentProfile?.full_name || currentProfile?.username}: ${text}`,
+        reference_id: postId,
+      })
+    }
     setCommentText(prev => ({ ...prev, [postId]: '' }))
     fetchComments(postId)
   }
@@ -179,12 +254,13 @@ export default function UserProfilePage({ params }) {
   }
 
   const isOwnProfile = currentUser?.id === userId
+  const allPhotos = [profile.profile_photo, ...(profile.photos || [])].filter(Boolean)
 
   return (
     <div className="min-h-screen bg-gray-50 pb-10">
 
       {/* Header */}
-      <div className="bg-white shadow-sm px-4 py-3 flex items-center gap-3">
+      <div className="bg-white shadow-sm px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
         <a href="/dashboard" className="text-gray-500 text-2xl">←</a>
         <h1 className="font-bold text-gray-900 text-lg">
           {profile.full_name || profile.username}
@@ -240,45 +316,63 @@ export default function UserProfilePage({ params }) {
             </div>
           )}
 
+          {/* Action Buttons */}
           {!isOwnProfile && (
-            <div className="flex gap-2 mt-4">
+            <div className="grid grid-cols-2 gap-2 mt-4">
               <button
                 onClick={() => sendRequest('friendship')}
                 disabled={!!connectionStatus}
-                className={`flex-1 py-2 rounded-xl font-bold text-sm ${
-                  connectionStatus ? 'bg-gray-100 text-gray-400' : 'bg-blue-500 text-white'
+                className={`py-2.5 rounded-xl font-bold text-sm ${
+                  connectionStatus?.status === 'accepted' ? 'bg-green-100 text-green-600' :
+                  connectionStatus ? 'bg-gray-100 text-gray-400' :
+                  'bg-blue-500 text-white'
                 }`}
               >
-                {connectionStatus ? '✓ Requested' : '👋 Friend'}
+                {connectionStatus?.status === 'accepted' ? '✓ Friends' :
+                 connectionStatus ? '⏳ Pending' : '👋 Add Friend'}
               </button>
               <button
                 onClick={() => sendRequest('dating')}
                 disabled={!!connectionStatus}
-                className={`flex-1 py-2 rounded-xl font-bold text-sm ${
+                className={`py-2.5 rounded-xl font-bold text-sm ${
                   connectionStatus ? 'bg-gray-100 text-gray-400' : 'bg-pink-500 text-white'
                 }`}
               >
-                {connectionStatus ? '✓ Requested' : '💝 Date'}
+                {connectionStatus ? '⏳ Pending' : '💝 Date Me'}
               </button>
               <a
                 href={`/gifts?to=${userId}&name=${profile.full_name || profile.username}`}
-                className="flex-1 py-2 rounded-xl font-bold text-sm bg-yellow-400 text-white text-center"
+                className="py-2.5 rounded-xl font-bold text-sm bg-yellow-400 text-white text-center"
               >
-                🎁 Gift
+                🎁 Send Gift
+              </a>
+              <a
+                href={`/chat`}
+                className="py-2.5 rounded-xl font-bold text-sm bg-gray-800 text-white text-center"
+              >
+                💬 Message
               </a>
             </div>
           )}
         </div>
       </div>
 
-      {/* Photos */}
-      {(profile.photos?.length > 0 || profile.profile_photo) && (
+      {/* Photos with Like */}
+      {allPhotos.length > 0 && (
         <div className="mx-4 mt-4">
           <h3 className="font-bold text-gray-800 mb-2">📸 Photos</h3>
           <div className="grid grid-cols-3 gap-2">
-            {[profile.profile_photo, ...(profile.photos || [])].filter(Boolean).map((photo, i) => (
-              <div key={i} className="aspect-square rounded-xl overflow-hidden">
+            {allPhotos.map((photo, i) => (
+              <div key={i} className="aspect-square rounded-xl overflow-hidden relative">
                 <img src={photo} alt="" className="w-full h-full object-cover" />
+                {!isOwnProfile && (
+                  <button
+                    onClick={() => togglePhotoLike(photo)}
+                    className="absolute bottom-1 right-1 bg-white rounded-full w-7 h-7 flex items-center justify-center shadow text-sm"
+                  >
+                    {likedPhotos.includes(photo) ? '❤️' : '🤍'}
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -327,10 +421,10 @@ export default function UserProfilePage({ params }) {
 
                   {(likesCount > 0 || commentsCount > 0) && (
                     <div className="flex items-center gap-3 px-4 py-2 text-xs text-gray-400">
-                      {likesCount > 0 && <span>❤️ {likesCount} likes</span>}
+                      {likesCount > 0 && <span>❤️ {likesCount} {likesCount === 1 ? 'like' : 'likes'}</span>}
                       {commentsCount > 0 && (
                         <button onClick={() => toggleComments(post.id)}>
-                          💬 {commentsCount} comments
+                          💬 {commentsCount} {commentsCount === 1 ? 'comment' : 'comments'}
                         </button>
                       )}
                     </div>
@@ -339,7 +433,7 @@ export default function UserProfilePage({ params }) {
                   <div className="flex border-t border-gray-50 mx-4">
                     <button
                       onClick={() => toggleLike(post.id)}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-semibold ${
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-semibold transition-all ${
                         isLiked ? 'text-pink-500' : 'text-gray-400'
                       }`}
                     >
@@ -426,7 +520,9 @@ export default function UserProfilePage({ params }) {
 
                       <div className="flex gap-2 mt-2">
                         <div className="w-8 h-8 bg-pink-200 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center">
-                          <span className="text-xs">👤</span>
+                          {currentProfile?.profile_photo ? (
+                            <img src={currentProfile.profile_photo} alt="" className="w-full h-full object-cover" />
+                          ) : <span className="text-xs">👤</span>}
                         </div>
                         <div className="flex-1 flex gap-2">
                           <input
