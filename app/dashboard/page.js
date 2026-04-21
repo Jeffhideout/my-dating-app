@@ -236,7 +236,7 @@ export default function Dashboard() {
               .map(u => (
                 <div key={u.id} className="relative rounded-2xl overflow-hidden bg-white shadow-sm">
                   {/* Clickable photo → opens profile */}
-                  <a href={`/user/${u.id}`}>
+                  <a href={`/view?=${u.id}`}>
                     <div className="aspect-square relative">
                       {u.profile_photo ? (
                         <img
@@ -283,7 +283,7 @@ export default function Dashboard() {
                         🎁
                       </a>
                       <a
-                        href={`/user/${u.id}`}
+                        href={`/view?id=${u.id}`}
                         className="flex-1 bg-pink-500 text-white text-xs py-1 rounded-lg font-bold text-center"
                       >
                         👤
