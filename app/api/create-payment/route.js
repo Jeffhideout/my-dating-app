@@ -1,9 +1,11 @@
 import Stripe from 'stripe'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
+export const runtime = 'nodejs'
 
 export async function POST(request) {
   try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '')
+    
     const { packageId, coins, price, packageName, userId } = await request.json()
 
     const session = await stripe.checkout.sessions.create({
@@ -22,17 +24,18 @@ export async function POST(request) {
         },
       ],
       mode: 'payment',
-      success_url: `http://localhost:3000/payment/success?session_id={CHECKOUT_SESSION_ID}&user_id=${userId}&coins=${coins}&package_id=${packageId}`,
-      cancel_url: `http://localhost:3000/coins`,
+      success_url: `https://my-dating-app-eight.vercel.app/payment/success?session_id={CHECKOUT_SESSION_ID}&user_id=${userId}&coins=${coins}&package_id=${packageId}`,
+      cancel_url: `https://my-dating-app-eight.vercel.app/coins`,
       metadata: {
         userId,
-        coins,
+        coins: String(coins),
         packageId,
       },
     })
 
     return Response.json({ url: session.url })
   } catch (error) {
+    console.error('Stripe error:', error)
     return Response.json({ error: error.message }, { status: 500 })
   }
 }
